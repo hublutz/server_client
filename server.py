@@ -68,3 +68,49 @@ class SpeedTestServer:
                 print(f"TCP transfer to {client_address} completed")
             except Exception as e:
                 print(f"Error handling TCP connection: {e}")
+
+
+    def handle_udp_requests(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)
+            udp_socket.bind((self.server_ip, self.udp_port))
+            print(f"Listening for UDP requests on port {self.udp_port}")
+            while True:
+                try:
+                    data, client_address = udp_socket.recvfrom(BUFFER_SIZE)
+                    if len(data) < 13:
+                        continue
+                    threading.Thread(target=self.handle_udp_connection, args=(udp_socket, data, client_address)).start()
+                except Exception as e:
+                    print(f"Error receiving UDP request: {e}")
+
+    def handle_udp_connection(self, udp_socket, data, client_address):
+        try:
+
+            magic_cookie, message_type, file_size = struct.unpack('!IBQ', data[:13])
+            if magic_cookie != MAGIC_COOKIE or message_type != MESSAGE_TYPE_REQUEST:
+                print(f"Invalid UDP request from {client_address}")
+                return
+
+            print(f"UDP request received from {client_address} for file size: {file_size} bytes")
+
+            segment_count = (file_size // BUFFER_SIZE) + (1 if file_size % BUFFER_SIZE != 0 else 0)
+
+            payload_prefix = struct.pack('!IBQQ', MAGIC_COOKIE, MESSAGE_TYPE_PAYLOAD, segment_count, 0)
+            for segment in range(segment_count):
+                payload = payload_prefix[:-8] + struct.pack('!Q', segment)  # Update only the segment number
+                payload += b'0' * min(BUFFER_SIZE - len(payload), file_size - segment * BUFFER_SIZE)
+                udp_socket.sendto(payload, client_address)
+                time.sleep(0.001)  # delay to avoid socket buffer overload
+
+            print(f"UDP transfer to {client_address} completed")
+        except Exception as e:
+            print(f"Error handling UDP connection: {e}")
+
+
+if __name__ == "__main__":
+    udp_port = 13117
+    tcp_port = 65432
+    server = SpeedTestServer(udp_port, tcp_port)
+    server.start()
