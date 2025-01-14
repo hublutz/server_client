@@ -24,3 +24,16 @@ class SpeedTestServer:
         tcp_thread.join()
         udp_request_thread.join()
 
+ def broadcast_offers(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as udp_socket:
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            #udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            udp_socket.bind((self.server_ip, self.udp_port))
+            while True:
+                try:
+                    message = struct.pack('!IBHH', MAGIC_COOKIE, MESSAGE_TYPE_OFFER, self.udp_port, self.tcp_port)
+                    udp_socket.sendto(message, ('<broadcast>', self.udp_port))
+                    print(f"Broadcast offer sent on UDP port {self.udp_port}")
+                except Exception as e:
+                    print(f"Error broadcasting offer: {e}")
+                time.sleep(UDP_BROADCAST_INTERVAL)
